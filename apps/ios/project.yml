@@ -1,0 +1,27 @@
+name: PhoneAssistant
+options:
+  bundleIdPrefix: com.phoneassistant
+  deploymentTarget:
+    iOS: "18.0"
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    TARGETED_DEVICE_FAMILY: "1"
+targets:
+  PhoneAssistant:
+    type: application
+    platform: iOS
+    sources:
+      - PhoneAssistant
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.phoneassistant.mobile
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: "Phone Assistant"
+        INFOPLIST_KEY_NSLocalNetworkUsageDescription: "连接你配对的电脑以提交任务和接收结果。"
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "在 App 内录入语音，转换为可编辑的聊天文字。"
+        INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "把你主动录入的语音转换成文字；设备不支持本地识别时可能使用 Apple 的语音服务。"
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+    scheme:
+      gatherCoverageData: true

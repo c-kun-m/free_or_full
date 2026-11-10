@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.local/
+.env
+.env.*
+!.env.example
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+tls.json
+.DS_Store
+*.xcuserstate
+xcuserdata/
+apps/ios/*.xcodeproj/
+apps/ios/build/
