@@ -25,3 +25,27 @@ targets:
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
     scheme:
       gatherCoverageData: true
+      testTargets:
+        - PhoneAssistantTests
+        - PhoneAssistantUITests
+  PhoneAssistantTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - PhoneAssistantTests
+    dependencies:
+      - target: PhoneAssistant
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+  PhoneAssistantUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - PhoneAssistantUITests
+    dependencies:
+      - target: PhoneAssistant
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: PhoneAssistant

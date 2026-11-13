@@ -4,11 +4,7 @@ struct ContentView: View {
     @EnvironmentObject private var model: AssistantModel
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var voice = VoiceController()
-    @State private var prompt = ""
     @State private var dictationPrefix = ""
-    @State private var address = "https://"
-    @State private var fingerprint = ""
-    @State private var code = ""
     @State private var showPairing = false
 
     private var conversations: [ChatTurnRecord] {
@@ -23,11 +19,15 @@ struct ContentView: View {
                     List {
                         Section {
                             Label(model.connection, systemImage: "desktopcomputer")
+                            if let issue = model.connectionIssue {
+                                Text(issue).font(.caption).foregroundStyle(.secondary)
+                                Button("重新连接") { Task { await model.reconnect() } }
+                            }
                             if !model.isPaired {
                                 Text("配对电脑后，在这里输入文字或使用语音，与助手聊天。")
                                 Button("配对电脑") { showPairing = true }
-                            } else if !model.agentConfigured {
-                                Text("电脑尚未启用助手模型，请按 README 配置后重启电脑服务。")
+                            } else if model.isConnected && !model.agentConfigured {
+                                Text("电脑尚未启用助手模型，请在电脑上配置模型后重启服务。")
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                         }
@@ -74,7 +74,7 @@ struct ContentView: View {
                     }
                     ToolbarItem(placement: .topBarTrailing) {
                         Menu {
-                            Button("新建聊天", systemImage: "square.and.pencil") { model.conversation = nil; prompt = "" }
+                            Button("新建聊天", systemImage: "square.and.pencil") { model.conversation = nil }
                             ForEach(conversations) { turn in
                                 Button(String(turn.prompt.prefix(24))) { model.conversation = turn.conversation_id }
                             }
@@ -122,11 +122,11 @@ struct ContentView: View {
             }.tabItem { Label("电脑任务", systemImage: "desktopcomputer") }
         }
         .onChange(of: voice.transcript) { _, text in
-            prompt = dictationPrefix + (dictationPrefix.isEmpty || text.isEmpty ? "" : " ") + text
+            model.draft = dictationPrefix + (dictationPrefix.isEmpty || text.isEmpty ? "" : " ") + text
         }
         .onChange(of: voice.error) { _, error in if let error { model.error = error; voice.error = nil } }
         .onChange(of: scenePhase) { _, phase in if phase != .active { voice.stop() } }
-        .sheet(isPresented: $showPairing) { pairingSheet }
+        .sheet(isPresented: $showPairing) { PairingView().environmentObject(model) }
         .alert("助手提示", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button("知道了") { model.error = nil }
         } message: { Text(model.error ?? "") }
@@ -134,41 +134,49 @@ struct ContentView: View {
 
     private var composer: some View {
         VStack(spacing: 8) {
-            if voice.isSpeaking || model.chats.contains(where: { $0.isRunning }) {
+            if voice.isSpeaking || model.visibleChats.contains(where: { $0.isRunning }) {
                 Button("打断回答") {
                     voice.stop()
                     Task { await model.interruptReply() }
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }
-            if model.pending != nil {
-                HStack {
-                    Text("发送尚未确认，重试不会重复提交。").font(.caption)
-                    Button("重试") { Task { await model.retryPending() } }.disabled(model.sending)
+            if let pending = model.pending {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(pending.prompt).lineLimit(3).font(.callout).textSelection(.enabled)
+                    if let reason = model.pendingError {
+                        Text("消息未被接受：" + reason).font(.caption).foregroundStyle(.red)
+                        Button("恢复到输入框") { model.editRejectedMessage() }.disabled(model.sending)
+                    } else {
+                        Text(model.sending ? "正在发送…" : "发送结果尚未确认，重试会使用同一个请求。").font(.caption)
+                        Button("重试发送") { Task { await model.retryPending() } }.disabled(model.sending)
+                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityIdentifier("pendingMessage")
             }
             HStack(alignment: .bottom) {
                 Button {
                     if voice.isRecording || voice.isStarting { voice.stopRecording() }
                     else {
                         voice.stopSpeaking()
-                        dictationPrefix = prompt
+                        dictationPrefix = model.draft
                         Task { await model.interruptReply() }
                         Task { await voice.start() }
                     }
                 } label: { Image(systemName: voice.isRecording || voice.isStarting ? "stop.circle.fill" : "mic.fill").font(.title2) }
                     .accessibilityLabel(voice.isRecording ? "结束录音" : "语音输入并打断回答")
-                    .disabled(!model.isPaired || model.sending)
-                TextField("输入消息，或点麦克风说话", text: $prompt, axis: .vertical)
+                    .disabled(!model.isPaired || model.sending || model.pending != nil || model.isPairing)
+                TextField("输入消息，或点麦克风说话", text: $model.draft, axis: .vertical)
                     .lineLimit(1...6).textFieldStyle(.roundedBorder)
-                    .disabled(voice.isRecording || voice.isStarting)
+                    .disabled(voice.isRecording || voice.isStarting || model.pending != nil)
+                    .accessibilityIdentifier("messageInput")
                 Button {
                     voice.stop()
-                    let text = prompt
-                    prompt = ""
-                    Task { await model.send(text) }
+                    Task { await model.send() }
                 } label: { Image(systemName: "arrow.up.circle.fill").font(.title) }
                     .accessibilityLabel("发送消息")
-                    .disabled(!model.isPaired || !model.agentConfigured || model.sending || model.pending != nil || voice.isRecording || voice.isStarting || prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .accessibilityIdentifier("sendMessage")
+                    .disabled(!model.canSend || voice.isRecording || voice.isStarting)
             }
             if voice.isRecording {
                 Text("正在录音，结束后可编辑文字再发送（最长 45 秒）").font(.caption).foregroundStyle(.secondary)
@@ -176,24 +184,4 @@ struct ContentView: View {
         }.padding().background(.bar)
     }
 
-    private var pairingSheet: some View {
-        NavigationStack {
-            Form {
-                Section("电脑连接信息") {
-                    TextField("HTTPS 地址", text: $address).textInputAutocapitalization(.never).autocorrectionDisabled()
-                    TextField("证书 SHA-256 指纹", text: $fingerprint).textInputAutocapitalization(.never).autocorrectionDisabled()
-                    SecureField("一次性配对码", text: $code)
-                    Text("从电脑服务启动输出中复制。配对码有效期为 5 分钟。").font(.caption)
-                }
-                Button("配对") {
-                    voice.stop()
-                    Task {
-                        model.error = nil
-                        await model.pair(address: address, fingerprint: fingerprint, code: code)
-                        if model.error == nil { showPairing = false; code = "" }
-                    }
-                }
-            }.navigationTitle("配对电脑").toolbar { Button("关闭") { showPairing = false } }
-        }
-    }
 }

@@ -4,9 +4,22 @@ import CryptoKit
 
 enum ClientError: LocalizedError {
     case message(String)
+    case http(Int, String)
     var errorDescription: String? {
-        switch self { case .message(let text): return text }
+        switch self { case .message(let text), .http(_, let text): return text }
     }
+    var requiresPairing: Bool { if case .http(401, _) = self { return true }; return false }
+    var rejectedSubmission: Bool {
+        if case .http(let status, _) = self { return [400, 401, 403, 404, 409, 413, 422].contains(status) }
+        return false
+    }
+}
+
+protocol CompanionTransport: Sendable {
+    func get<T: Decodable & Sendable>(_ path: String, as: T.Type) async throws -> T
+    func post<T: Decodable & Sendable, B: Encodable & Sendable>(_ path: String, body: B, as: T.Type) async throws -> T
+    func events(after: Int) async -> URLSessionWebSocketTask
+    func close() async
 }
 
 final class PinnedTrust: NSObject, URLSessionDelegate, @unchecked Sendable {
@@ -37,13 +50,14 @@ final class PinnedTrust: NSObject, URLSessionDelegate, @unchecked Sendable {
     }
 }
 
-actor CompanionAPI {
+actor CompanionAPI: CompanionTransport {
     private let base: URL
     private let token: String
     private let session: URLSession
     init(config: ConnectionConfig) throws {
-        guard let components = URLComponents(string: config.address),
-              components.scheme == "https", let host = components.host,
+        guard let components = URLComponents(string: config.address.trimmingCharacters(in: .whitespacesAndNewlines)),
+              components.scheme == "https", let host = components.host, !host.isEmpty,
+              components.port == nil || (1...65535).contains(components.port!),
               components.user == nil, components.password == nil,
               components.query == nil, components.fragment == nil,
               components.path.isEmpty || components.path == "/",
@@ -68,9 +82,10 @@ actor CompanionAPI {
     }
     private func decode<T: Decodable & Sendable>(_ request: URLRequest, as: T.Type) async throws -> T {
         let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+        guard let http = response as? HTTPURLResponse else { throw ClientError.message("电脑返回了无效响应。") }
+        guard (200..<300).contains(http.statusCode) else {
             let error = (try? JSONSerialization.jsonObject(with: data)) as? [String: String]
-            throw ClientError.message(error?["error"] ?? "电脑服务返回错误。")
+            throw ClientError.http(http.statusCode, error?["error"] ?? "电脑服务返回错误（\(http.statusCode)）。")
         }
         return try JSONDecoder().decode(T.self, from: data)
     }

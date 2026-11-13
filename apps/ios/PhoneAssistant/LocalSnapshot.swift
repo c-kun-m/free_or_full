@@ -6,6 +6,8 @@ struct LocalSnapshot: Codable {
     let chats: [ChatTurnRecord]
     let pending: ChatCommand?
     let cursor: Int
+    var draft: String? = nil
+    var pendingError: String? = nil
 
     static func fileURL(config: ConnectionConfig) throws -> URL {
         let directory = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,

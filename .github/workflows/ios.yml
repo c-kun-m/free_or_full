@@ -1,0 +1,30 @@
+name: iOS client
+on:
+  push:
+    paths: ['apps/ios/**', 'scripts/check-ios.sh', '.github/workflows/ios.yml']
+  pull_request:
+    paths: ['apps/ios/**', 'scripts/check-ios.sh', '.github/workflows/ios.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  simulator:
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install project generator
+        run: brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+      - name: Build and test native iOS client
+        run: bash scripts/check-ios.sh
+      - name: Save test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-test-results
+          path: apps/ios/build/*.xcresult
+          if-no-files-found: ignore
+          retention-days: 7
