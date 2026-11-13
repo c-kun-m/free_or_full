@@ -8,6 +8,7 @@ struct LocalSnapshot: Codable {
     let cursor: Int
     var draft: String? = nil
     var pendingError: String? = nil
+    var pendingUncertain: Bool? = nil
 
     static func fileURL(config: ConnectionConfig) throws -> URL {
         let directory = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,

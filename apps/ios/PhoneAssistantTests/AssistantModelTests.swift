@@ -102,6 +102,22 @@ final class AssistantModelTests: XCTestCase {
         XCTAssertTrue(ids.isEmpty)
         model.pause()
     }
+    func testRejectedRetryCannotEraseEarlierUncertainExecution() async throws {
+        let transport = TestTransport()
+        let (model, file) = try await makeModel(transport)
+        await transport.setError(.message("Accepted response may have been lost"))
+        model.draft = "可能已执行"
+        await model.send()
+        let id = model.pending?.request_id
+        model.pause()
+        let (restored, _) = try await makeModel(transport, cache: file)
+        await transport.setError(.http(401, "Credential revoked after original submission"))
+        await restored.retryPending()
+        restored.editRejectedMessage()
+        XCTAssertNil(restored.pendingError)
+        XCTAssertEqual(restored.pending?.request_id, id)
+        XCTAssertNotNil(restored.pending)
+    }
     func testSnapshotCannotEraseAcceptanceOrRegressVersion() async throws {
         let transport = TestTransport()
         let (model, _) = try await makeModel(transport)

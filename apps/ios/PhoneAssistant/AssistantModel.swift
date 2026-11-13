@@ -26,6 +26,7 @@ final class AssistantModel: ObservableObject {
     private var selectionGeneration = 0
     private var snapshotURL: URL?
     private var cacheWrite: Task<Void, Never>?
+    private var pendingUncertain = false
     private let cacheOverride: URL?
     private let makeAPI: @Sendable (ConnectionConfig) throws -> any CompanionTransport
     private let saveCredentials: (ConnectionConfig) throws -> Void
@@ -47,7 +48,7 @@ final class AssistantModel: ObservableObject {
     private func persist() throws {
         if let snapshotURL {
             try LocalSnapshot(tasks: tasks, chats: chats, pending: pending, cursor: cursor,
-                              draft: draft, pendingError: pendingError).save(to: snapshotURL)
+                              draft: draft, pendingError: pendingError, pendingUncertain: pendingUncertain).save(to: snapshotURL)
         }
     }
     private func scheduleCacheWrite() {
@@ -100,6 +101,7 @@ final class AssistantModel: ObservableObject {
         selectConversation(chats.first?.conversation_id)
         pending = cached?.pending
         pendingError = cached?.pendingError
+        pendingUncertain = cached?.pendingUncertain ?? (cached?.pending != nil && cached?.pendingError == nil)
         draft = cached?.draft ?? unpairedDraft
         isPaired = true
         connectionIssue = nil
@@ -210,6 +212,7 @@ final class AssistantModel: ObservableObject {
         let original = draft
         pending = ChatCommand(request_id: UUID().uuidString, prompt: original, conversation_id: conversation)
         pendingError = nil
+        pendingUncertain = false
         draft = ""
         do { try persist() } catch {
             pending = nil; draft = original
@@ -222,20 +225,25 @@ final class AssistantModel: ObservableObject {
         guard !sending, !isPairing, pendingError == nil, let api, let command = pending else { return }
         let expected = connectionGeneration
         let selected = selectionGeneration
+        let wasUncertain = pendingUncertain
         sending = true
         defer { sending = false }
+        // Persist the in-flight ambiguity before transmission, including across process termination.
+        do { pendingUncertain = true; try persist() }
+        catch { pendingUncertain = wasUncertain; self.error = "无法保存发送状态，尚未重试：" + error.localizedDescription; return }
         do {
             let turn = try await api.post("v1/chats", body: command, as: ChatTurnRecord.self)
             guard expected == connectionGeneration else { return }
-            pending = nil; pendingError = nil
+            pending = nil; pendingError = nil; pendingUncertain = false
             if selectionGeneration == selected { conversation = turn.conversation_id }
             merge(turn)
             try persist()
             // The acceptance already contains the authoritative record. Events deliver later changes.
         } catch {
             guard expected == connectionGeneration else { return }
-            if (error as? ClientError)?.rejectedSubmission == true {
+            if (error as? ClientError)?.rejectedSubmission == true && !wasUncertain {
                 pendingError = error.localizedDescription
+                pendingUncertain = false
                 try? persist()
             }
             self.error = error.localizedDescription
@@ -246,7 +254,7 @@ final class AssistantModel: ObservableObject {
         let oldDraft = draft
         let oldError = pendingError
         draft = command.prompt; selectConversation(command.conversation_id)
-        pending = nil; pendingError = nil
+        pending = nil; pendingError = nil; pendingUncertain = false
         do { try persist() } catch {
             pending = command; pendingError = oldError; draft = oldDraft
             self.error = "无法保存草稿，请重试。"
