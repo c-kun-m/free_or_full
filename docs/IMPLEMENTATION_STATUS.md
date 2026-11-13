@@ -1,6 +1,6 @@
 # 实施记录
 
-日期：2026-11-10
+更新日期：2026-11-13
 
 ## 本次里程碑
 
@@ -24,7 +24,7 @@ P1 已扩展为独立 iOS 聊天 App＋LangChain 电脑助手＋Codex 工具。P
 
 ## 当前限制
 
-- iOS 源码尚未在 Mac 编译或真机运行，不能视为已经可安装交付。
+- iOS 已通过 macOS／Xcode 16.4 编译及模拟器测试，但尚未在用户 iPhone 上签名安装、配对及真实模型联调，不能视为真机交付完成。
 - 未实现自动语音插话检测／回声消除、连续全双工语音、自动结果播报、手机动作执行器和长期记忆整理。
 - Siri 不属于必要入口；当前 App 内交互不使用 Siri。
 - 已实现的历史搜索是电脑侧中文关键词匹配，尚无摘要提取、语义搜索、知识图谱或手机离线问答 Agent。
@@ -47,7 +47,7 @@ P1 已扩展为独立 iOS 聊天 App＋LangChain 电脑助手＋Codex 工具。P
 - 编译后的实际服务通过可信 TLS 请求、一次性配对与带认证任务快照检查。
 - 本机 Codex 0.166.0-alpha.6 协议握手成功，检测到已有登录。
 - 真实只读任务最终返回 READY，终态 succeeded；此前出现上游 responseStreamDisconnected 重试，并有两次 90 秒测试主动取消。未把这些取消尝试当作成功验证。
-- 当前环境未发现 Swift／Xcode 构建工具，iOS 编译与真机验证尚未执行。
+- Windows 本机没有 Swift／Xcode；已通过 GitHub Actions 的 macOS runner 执行原生 iOS 构建与 XCTest／XCUITest。真机验证尚未执行。
 
 生产入口使用真实 CodexEngine 和配置后的 LangChainAssistant，不使用模拟结果代替实际执行。未配置助手模型时，接口明确返回配置提示。
 
@@ -55,6 +55,18 @@ P1 已扩展为独立 iOS 聊天 App＋LangChain 电脑助手＋Codex 工具。P
 
 锁文件记录 LangChain 1.6.3、@langchain/core 1.3.5、@langchain/openai 1.8.2。调用方式参考 [LangChain Agent](https://docs.langchain.com/oss/javascript/langchain/agents) 与 [流式输出](https://docs.langchain.com/oss/javascript/langchain/streaming)。
 
-下一次真机验证应覆盖：首次麦克风／识别授权、拒绝授权后的文字模式、中文识别、点按停播、新提问取消旧回答、耳机／来电中断、后台恢复、证书固定与较大历史缓存。当前没有 Mac/Xcode，不能把 Swift 源码视为已签名可安装的 iPhone 软件。
+下一次真机验证先覆盖客户端文字模块：首次配对、真实消息与任务、断线、后台恢复和证书固定。完整语音模块另行验证首次授权、中文识别、点按停播、耳机／来电中断。用户已确认有 Mac 和 iPhone；当前交付不包含签名安装包。
 
 App 内语音使用 [Apple Speech 音频识别请求](https://developer.apple.com/documentation/speech/sfspeechaudiobufferrecognitionrequest) 和 [AVSpeechSynthesizer](https://developer.apple.com/documentation/avfaudio/avspeechsynthesizer)，与 Siri 入口无关。
+
+## M1 客户端基础模块（2026-11-13）
+
+本轮只修改 iOS 基础客户端和构建／测试入口，未扩展电脑 Agent、记忆整理或手机动作。
+
+- 保存输入草稿，待发送消息与请求 ID 可跨启动恢复；写盘失败不提交网络请求。
+- 区分网络结果未知与服务器明确拒绝；前者重试原请求，后者可恢复编辑。
+- 配对表单独立、配对防重复、临时连接释放；重连错误改为页面内提示。
+- 快照不会覆盖更高版本记录或抹去刚收到的接受响应；旧连接响应不得写入新连接。
+- 测试覆盖成功发送、恢复重试、拒绝编辑、缓存写入失败、快照竞争、配对失败、草稿保存和连接配置校验。
+- 最终原生验证：[Xcode 16.4 构建与 12 项客户端测试通过](https://github.com/c-kun-m/free_or_full/actions/runs/43389500874)，其中 11 项状态测试、1 项界面测试，验证代码提交 `1ec7580`。
+- 额外覆盖发送中切换会话、第一次发送结果未知后重试被拒绝的竞争情况。完整模块验收追踪见 [M1 文档](IOS_CLIENT_MODULE.md)。

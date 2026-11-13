@@ -17,7 +17,7 @@
 ## 本轮变更
 
 - 输入框使用持久草稿；写入待发送请求失败时保留原文，且不发网络请求。
-- 网络超时保留原请求 ID，重启 App 后可继续重试；只有服务器明确拒绝的请求才允许恢复编辑。
+- 网络超时保留原请求 ID，重启 App 后可继续重试；仅当首次请求明确被拒绝、没有更早的不确定发送时，才允许恢复编辑。
 - 接受响应直接更新聊天，避免紧随其后的旧快照把新消息覆盖。
 - 重连错误显示在页面，不每次重试都弹窗；认证失效提示重新配对。
 - 配对过程中禁用重复提交和关闭操作；临时网络会话在成功／失败时均释放。
@@ -49,12 +49,14 @@ GitHub Actions 使用 macOS runner 进行同样的模拟器验证，并保存 `.
 
 ## 完成判定
 
-- [ ] macOS 上原生 App 构建成功。
-- [ ] 客户端状态测试通过。
-- [ ] 模拟器界面启动／导航测试通过。
+- [x] macOS 上原生 App 构建成功（Xcode 16.4）。
+- [x] 客户端状态测试通过（11 项）。
+- [x] 模拟器界面启动／导航测试通过（1 项，附聊天和配对界面截图到测试报告）。
 - [ ] iPhone 安装与首次配对验证通过。
 - [ ] iPhone 与真实 LangChain／Codex 完成一轮文字任务。
 
 最后两项需要用户的 Mac／iPhone 和模型配置。没有实测证据的项保持未完成，不以电脑端 TypeScript 测试替代。
+
+验证记录：[原生构建与 12 项测试通过](https://github.com/c-kun-m/free_or_full/actions/runs/43389500874)，验证代码提交 `1ec7580`。测试报告可在该运行的 Artifacts 下载，使用 Mac 的 Xcode 打开 `.xcresult` 查看。
 
 构建配置参考：[GitHub macOS runners](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)、[XcodeGen ProjectSpec](https://github.com/yonaskolb/XcodeGen/blob/master/Docs/ProjectSpec.md)。
