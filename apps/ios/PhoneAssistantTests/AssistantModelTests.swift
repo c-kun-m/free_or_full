@@ -155,6 +155,22 @@ final class AssistantModelTests: XCTestCase {
         XCTAssertFalse(model.canSend)
         XCTAssertEqual(LocalSnapshot.load(from: file)?.draft, "下次接着写")
     }
+    func testAcceptanceDoesNotNavigateAwayFromNewChatChosenWhileSending() async throws {
+        let transport = TestTransport()
+        let (model, _) = try await makeModel(transport)
+        await transport.holdNext()
+        model.draft = "等待接受的消息"
+        let send = Task { await model.send() }
+        for _ in 0..<100 {
+            if !(await transport.requestIDs()).isEmpty { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        model.selectConversation(nil)
+        await transport.release()
+        await send.value
+        XCTAssertNil(model.conversation)
+        XCTAssertEqual(model.chats.count, 1)
+    }
     func testConnectionValidationRejectsInvalidAddressAndPin() throws {
         XCTAssertThrowsError(try CompanionAPI(config: ConnectionConfig(address: "http://localhost", fingerprint: config.fingerprint, token: "")))
         XCTAssertThrowsError(try CompanionAPI(config: ConnectionConfig(address: "https://localhost/path", fingerprint: config.fingerprint, token: "")))

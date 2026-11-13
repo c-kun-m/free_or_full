@@ -5,7 +5,7 @@ import Combine
 final class AssistantModel: ObservableObject {
     @Published var tasks: [TaskRecord] = []
     @Published var chats: [ChatTurnRecord] = []
-    @Published var conversation: String?
+    @Published private(set) var conversation: String?
     @Published var draft = "" { didSet { scheduleCacheWrite() } }
     @Published var agentConfigured = false
     @Published var error: String?
@@ -23,6 +23,7 @@ final class AssistantModel: ObservableObject {
     private var cursor = 0
     private var epoch = 0
     private var connectionGeneration = 0
+    private var selectionGeneration = 0
     private var snapshotURL: URL?
     private var cacheWrite: Task<Void, Never>?
     private let cacheOverride: URL?
@@ -38,6 +39,10 @@ final class AssistantModel: ObservableObject {
     }
     var visibleChats: [ChatTurnRecord] { Array(chats.filter { $0.conversation_id == conversation }.reversed()) }
     var canSend: Bool { isPaired && isConnected && agentConfigured && !sending && !isPairing && pending == nil && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    func selectConversation(_ id: String?) {
+        selectionGeneration += 1
+        conversation = id
+    }
 
     private func persist() throws {
         if let snapshotURL {
@@ -92,7 +97,7 @@ final class AssistantModel: ObservableObject {
         cursor = cached?.cursor ?? 0
         tasks = cached?.tasks ?? []
         chats = cached?.chats ?? []
-        conversation = chats.first?.conversation_id
+        selectConversation(chats.first?.conversation_id)
         pending = cached?.pending
         pendingError = cached?.pendingError
         draft = cached?.draft ?? unpairedDraft
@@ -216,14 +221,14 @@ final class AssistantModel: ObservableObject {
     func retryPending() async {
         guard !sending, !isPairing, pendingError == nil, let api, let command = pending else { return }
         let expected = connectionGeneration
-        let selected = conversation
+        let selected = selectionGeneration
         sending = true
         defer { sending = false }
         do {
             let turn = try await api.post("v1/chats", body: command, as: ChatTurnRecord.self)
             guard expected == connectionGeneration else { return }
             pending = nil; pendingError = nil
-            if conversation == selected { conversation = turn.conversation_id }
+            if selectionGeneration == selected { conversation = turn.conversation_id }
             merge(turn)
             try persist()
             // The acceptance already contains the authoritative record. Events deliver later changes.
@@ -240,7 +245,7 @@ final class AssistantModel: ObservableObject {
         guard !sending, let command = pending, pendingError != nil else { return }
         let oldDraft = draft
         let oldError = pendingError
-        draft = command.prompt; conversation = command.conversation_id
+        draft = command.prompt; selectConversation(command.conversation_id)
         pending = nil; pendingError = nil
         do { try persist() } catch {
             pending = command; pendingError = oldError; draft = oldDraft

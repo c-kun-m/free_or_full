@@ -74,9 +74,9 @@ struct ContentView: View {
                     }
                     ToolbarItem(placement: .topBarTrailing) {
                         Menu {
-                            Button("新建聊天", systemImage: "square.and.pencil") { model.conversation = nil }
+                            Button("新建聊天", systemImage: "square.and.pencil") { model.selectConversation(nil) }
                             ForEach(conversations) { turn in
-                                Button(String(turn.prompt.prefix(24))) { model.conversation = turn.conversation_id }
+                                Button(String(turn.prompt.prefix(24))) { model.selectConversation(turn.conversation_id) }
                             }
                         } label: { Image(systemName: "bubble.left.and.bubble.right") }.accessibilityLabel("聊天记录")
                     }
@@ -126,6 +126,7 @@ struct ContentView: View {
         }
         .onChange(of: voice.error) { _, error in if let error { model.error = error; voice.error = nil } }
         .onChange(of: scenePhase) { _, phase in if phase != .active { voice.stop() } }
+        .onChange(of: showPairing) { _, presented in if presented { voice.stop() } }
         .sheet(isPresented: $showPairing) { PairingView().environmentObject(model) }
         .alert("助手提示", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button("知道了") { model.error = nil }
